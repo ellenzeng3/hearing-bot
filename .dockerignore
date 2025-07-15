@@ -1,0 +1,5 @@
+# flyctl launch added from .gitignore
+**/.env
+**/hearings.db
+**/__pycache__
+fly.toml

@@ -1,6 +1,10 @@
 from fetch import fetch_event_detail
 from extract import get_URL
 import sqlite3
+from html import escape 
+import datetime
+import time
+
 
 # ─── Post upcoming meetings ─────────────────────────────────────────────────────
 def post_upcoming():
@@ -11,10 +15,11 @@ def post_upcoming():
         date,
         committee,
         title, 
-        url,
-        status
+        url
     FROM hearings
     WHERE date(date) >= date('now') 
+            AND strftime('%Y-%W', date) = strftime('%Y-%W', 'now')
+
     ORDER BY date(date) ASC;       
             
     """)
@@ -24,7 +29,7 @@ def post_upcoming():
     else:
         print(f"\nUpcoming hearings ({len(rows)}):")
         # print("Upcoming hearings:")
-        format_hearings_grouped(rows)
+        return post_slack(rows)
         # for ev_id, ev_date, title, committee in rows:
         #     print(f"{ev_date} | {committee} | {title}")
 
@@ -34,7 +39,7 @@ def post_last_update():
     conn = sqlite3.connect("hearings.db")
     c = conn.cursor()
     c.execute("SELECT MAX(date_inserted) FROM hearings WHERE date(date) >= date('now')")
-    last_date = c.fetchone()[0]
+    last_date = c.fetchone()[0] 
     print(last_date)
     if not last_date:
         print("No insertions found.")
@@ -47,8 +52,7 @@ def post_last_update():
             date,
             committee,
             title,
-            url,
-            status
+            url
         FROM hearings
         WHERE date(date) >= date('now')
         AND date(date_inserted) = ?
@@ -59,7 +63,7 @@ def post_last_update():
     if not rows:
         print("None found")
     else: 
-        format_hearings_grouped(rows)
+        return post_slack(rows)
 
 def post_changed():
     conn = sqlite3.connect("hearings.db")
@@ -69,8 +73,7 @@ def post_changed():
             date,
             committee,
             title,
-            url,
-            status
+            url
         FROM hearings
         WHERE date(date) >= date('now')
         AND status != 'Scheduled'
@@ -82,29 +85,135 @@ def post_changed():
         return
 
     print(f"\nChanged hearings ({len(rows)}):")
-    format_hearings_grouped(rows)
+    post_slack(rows)
 
+def date_formatting(date_str):
+    dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+    unix_timestamp = int(time.mktime(dt.timetuple()))
+    # Construct the Slack date string
+    slack_date_str = f"<!date^{unix_timestamp}^{{date_long_pretty}}|{date_str}>"
+    return slack_date_str
 
-def format_hearings_grouped(rows):
+def post_slack(rows):
     """
     Given rows of (date_str, committee, title, url, status),
     prints them grouped by date in a bullet list.
     """
     
     # print(rows)
-    
     by_date = {}
-    for date_str, committee, title, url, status in rows:
+
+    for date_str, committee, title, url in rows:
         by_date[date_str] = by_date.get(date_str, [])
-        by_date[date_str].append((committee, title, url, status))
- 
-    output = []
+        by_date[date_str].append((committee, title, url))
+
+    print(by_date)
+    blocks: list[dict] = []
+    daily_blocks: dict[str, list[dict]] = {}
+
     for date_str in sorted(by_date):
-        output.append(date_str)
-        for committee, title, url, status in by_date[date_str]: 
-            # if url is None or url == "": 
-            output.append(f"• {(status)}: {committee} | {title}")
-            # else:
-            #     output.append(f"• {(status)}: {committee} | {title} | {url}")
-        output.append("")
-    print("\n".join(output).rstrip())
+        blocks: list[dict] = []
+
+        date_formatted = date_formatting(date_str)  # e.g. returns f"<!date^{unix_timestamp}^{{date}}|{date_str}>"
+        # 1) Date header (rich_text_section inside a rich_text block)
+        # date_formatted = date_formatting(date_str) # e.g. returns f"<!date^{unix_timestamp}^{{date}}|{date_str}>"
+
+        blocks.append({
+            "type": "rich_text",
+            "elements": [{
+                    "type": "rich_text_section",
+                    "elements": [{ "type": "text", "text": date_str, "style": {"bold": True} }]
+                }
+            ]
+        })
+
+        # 2) Bulleted list for that date
+        bullet_sections = []
+        for committee, title, url in by_date[date_str]:
+            # committee in **bold**
+            section_elems = [
+                {
+                    "type": "text",
+                    "text": f"{committee} | "
+                }
+            ]
+
+            # linked or plain title
+            if url is not None and url != "":
+                section_elems.append({
+                    "type": "link",
+                    "url": url,
+                    "text": title
+                })
+            else:
+                section_elems.append({
+                    "type": "text",
+                    "text": title
+                })
+
+            bullet_sections.append({
+                "type": "rich_text_section",
+                "elements": section_elems
+            })
+
+        blocks.append({
+            "type": "rich_text",
+            "elements": [
+                {
+                    "type": "rich_text_list",
+                    "style": "bullet",
+                    "indent": 0,
+                    "border": 0,
+                    "elements": bullet_sections      # ≤ 50 items allowed per list :contentReference[oaicite:0]{index=0}
+                }]
+        })
+
+        daily_blocks[date_str] = blocks
+
+    return daily_blocks
+
+
+    # by_date = {}
+    # for date_str, committee, title, url in rows:
+    #     by_date[date_str] = by_date.get(date_str, [])
+    #     by_date[date_str].append((committee, title, url))
+
+    # print(by_date)
+    # blocks: list[dict] = []
+    # daily_blocks: dict[str, list[dict]] = {}
+
+    # for date_str in sorted(by_date):
+
+    #     # 1) Date header (rich_text_section inside a rich_text block)
+
+    #     blocks.append({
+    #         "type": "section",
+    #         "text": {
+    #                 "type": "mrkdwn",
+    #                 "text": date_formatting(date_str),
+    #                 # "style": {"bold": True}
+    #             }
+    #         })
+
+    #     # 2) Bulleted list for that date
+    #     bullets = [] 
+    #     for committee, title, url in by_date[date_str]:
+    #         label = f"*{committee}* | "
+    #         if url:
+    #             bullets.append(f" • {label}<{url}|{title}>")
+    #         else:
+    #             bullets.append(f" • {label}{title}")
+
+    #     blocks.append({
+    #         "type": "section",
+    #         "text": 
+    #             {
+    #                 "type": "mrkdwn",
+    #                 "text": "\n".join(bullets)
+    #             }
+    #     })
+
+    #     daily_blocks[date_str] = blocks
+
+    # return daily_blocks
+        

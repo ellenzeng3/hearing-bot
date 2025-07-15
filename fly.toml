@@ -1,0 +1,26 @@
+app = "hearing-bot"
+primary_region = "iad"         # or your closest region
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Persistent SQLite database
+[mounts]
+  source      = "hearings_db"   # created with `fly volumes create`
+  destination = "/data"
+
+# Environment – credentials are added later with `fly secrets set`
+[env]
+  DATABASE_PATH = "/data/hearings.db"
+
+# Each entry becomes its own process group (and therefore its own Machine)
+[processes]
+  daily  = "bash -c 'python hearing_bot.py update'"
+
+  # Runs every week – just posts the upcoming calendar
+  weekly = "python hearing_bot.py upcoming"
+
+# VM defaults (feel free to adjust)
+[[vm]]
+  size      = "shared-cpu-1x"
+  processes = ["daily", "weekly"]

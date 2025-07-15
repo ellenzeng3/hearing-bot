@@ -1,7 +1,7 @@
 from fetch import fetch_event_detail
 from extract import get_URL, get_date, parse_date, get_status
 import sqlite3 
-from post import format_hearings_grouped
+from post import post_slack
 
 
 def backfill_missing_urls():
@@ -68,7 +68,7 @@ def check_status():
 
             new_status = get_status(detail)
             if new_status == status:
-                # print(f"No status change for {title}, skipping")
+                # print(f"No status change for {title}")
                 continue
             else:
                 # status change:
