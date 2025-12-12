@@ -11,16 +11,15 @@ from slackeventsapi import SlackEventAdapter
 from slack_sdk import WebClient
 import os
 import sys # delete later
+from hearing_bot import check_status
 
+DB_PATH = os.getenv("DATABASE_PATH", "/data/hearings.db")
+
+# Deletes the last inputted rows from the database (testing purposes)
 def delete_rows():
-    """
-    Deletes the last three inputted rows from the 'hearings.db' database,
-    based on the 'date_inserted' column (assuming it stores insertion timestamps).
-    """
     conn = sqlite3.connect('hearings.db')
     cursor = conn.cursor()
 
-    # Fetch the primary key or ROWID of the last three inserted rows
     cursor.execute("""
         SELECT rowid FROM hearings
         ORDER BY date_inserted DESC
@@ -30,7 +29,6 @@ def delete_rows():
     rowids_to_delete = [row[0] for row in rows]
 
     if rowids_to_delete:
-        # Use a parameterized query to delete the rows
         cursor.execute(
             f"DELETE FROM hearings WHERE rowid IN ({','.join(['?']*len(rowids_to_delete))})",
             rowids_to_delete
@@ -39,10 +37,10 @@ def delete_rows():
 
     conn.close()
 
-def update():
+# Update the database with new hearings and meetings
+def update(path): 
 
-    # Open SQLite DB
-    conn = sqlite3.connect("hearings.db")
+    conn = sqlite3.connect(path, check_same_thread=False) 
     c    = conn.cursor()
 
     # Preload seen IDs or start fresh if table missing
@@ -58,20 +56,21 @@ def update():
     new_hearings = [] 
     new_upcoming_hearings = []
 
+    # Fetch the 250 most recently updated hearings and meetings from the API
     try:
-        events = fetch_all("hearing") + fetch_all("meeting") 
-        # events = fetch_all("hearing") 
+        events = fetch_all("hearing") + fetch_all("meeting")  
     except Exception as e:
         print(f"Error fetching events: {e}")
         return
 
+    # Process each event, checking if it's already in the database
     for event in events:
         ev_id = event.get("eventId") or str(event.get("jacketNumber"))
         if ev_id in seen_ids or ev_id in known_errors: 
             continue
         seen_ids.add(ev_id)
 
-        # Not in DB → fetch detail and parse date
+        # If new event, fetch its details
         try:
             api_call = event["url"]
             detail    = fetch_event_detail(api_call)
@@ -88,11 +87,13 @@ def update():
 
         today = date.today().isoformat()
 
+        # Check if the new hearing is an upcoming hearing
         try:
             dt = parse_date(date_obj)
             date_str = dt.date().isoformat()
             new_hearings.append((ev_id, date_str, title, committee, url, today, api_call, status))
             
+            # Skip irrelevant hearings
             if date_str >= today:
                 if committee in irrelevant_hearings:
                     print(f"Skipping irrelevant hearing titled {title} in {committee}")
@@ -101,8 +102,7 @@ def update():
                 print(f"New hearing found: {status}: {date_str} | {committee} | {title}")
         
         except Exception as e:
-            if ev_id in known_errors:
-                # print(ev_id, "is known to have errors.")
+            if ev_id in known_errors: 
                 continue
             print(f"Error parsing {ev_id}: {e}")
             continue
@@ -125,21 +125,18 @@ def update():
 
 
 if __name__ == "__main__": 
-    
-    delete_rows()
+     
     env_path = Path('.') / '.env'
     load_dotenv(dotenv_path=env_path)
     app = Flask(__name__)
     slack_event_adapter = SlackEventAdapter(os.environ['SIGNING_SECRET'],'/slack/events',app) 
     client = WebClient(token=os.environ['SLACK_TOKEN']) 
 
-    daily_messages = update() 
+    daily_messages = update("hearings.db") 
+    check_status()
 
     if not daily_messages:
-        client.chat_postMessage(
-            channel = "#private-test-channel",
-            text = "No new upcoming hearings found."
-        ) 
+        print("No new hearings found.")
         sys.exit()
     
     print(daily_messages)

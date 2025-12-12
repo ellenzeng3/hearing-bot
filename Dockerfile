@@ -1,5 +1,7 @@
 FROM python:3.12-slim AS builder
 
+WORKDIR /app
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -14,6 +16,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Folder that will be backed by the Fly volume
-RUN mkdir -p /data
+# RUN mkdir -p /data
 
 CMD ["python", "hearing_bot.py", "update"]

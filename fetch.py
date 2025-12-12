@@ -11,18 +11,17 @@ from extract import get_URL
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-CONGRESS = 119
+CONGRESS = 119 # Update this for the current Congress session
 HEARING_URL   = f"https://api.congress.gov/v3/hearing/{CONGRESS}"
 MEETING_URL   = f"https://api.congress.gov/v3/committee-meeting/{CONGRESS}"
 today = date.today().isoformat()  # e.g. "2025-06-18"
 
+# Environment variables and session setup
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
 
 API_KEY = os.getenv("CONGRESS_API_KEY")
 HEADERS = {"X-Api-Key": API_KEY}
-
-# ─── Session with retries ─────────────────────────────────────────────────────
 
 session = requests.Session()
 session.headers.update({"X-Api-Key": API_KEY})
@@ -38,12 +37,9 @@ session.mount("https://", HTTPAdapter(max_retries=retry))
 
 # ─── Main fetches ───────────────────────────────────────────────────────────────
 
+# Fetch all hearings or committee meetings for the current Congress
 def fetch_all(kind):
 
-    """
-    Fetch all hearings or committee meetings for the current Congress.
-    https://api.congress.gov/v3/committee-meeting/118?api_key=[INSERT_KEY]
-    """
     try:
         url = HEARING_URL if kind == "hearing" else MEETING_URL
 
@@ -62,6 +58,7 @@ def fetch_all(kind):
         return []
     
 
+# Fetch detailed information about a specific hearing or committee meeting
 def fetch_event_detail(url):
      
     try:

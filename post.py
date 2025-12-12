@@ -2,7 +2,7 @@ from fetch import fetch_event_detail
 from extract import get_URL
 import sqlite3
 from html import escape 
-import datetime
+from datetime import datetime
 import time
 
 
@@ -34,7 +34,7 @@ def post_upcoming():
         #     print(f"{ev_date} | {committee} | {title}")
 
 
-
+# Post hearings that were last updated 
 def post_last_update():
     conn = sqlite3.connect("hearings.db")
     c = conn.cursor()
@@ -65,6 +65,7 @@ def post_last_update():
     else: 
         return post_slack(rows)
 
+# Post hearings that were changed since last check
 def post_changed():
     conn = sqlite3.connect("hearings.db")
     c = conn.cursor()
@@ -87,13 +88,12 @@ def post_changed():
     print(f"\nChanged hearings ({len(rows)}):")
     post_slack(rows)
 
-def date_formatting(date_str):
-    dt = datetime.datetime.strptime(date_str, "%Y-%m-%d")
-    unix_timestamp = int(time.mktime(dt.timetuple()))
-    # Construct the Slack date string
-    slack_date_str = f"<!date^{unix_timestamp}^{{date_long_pretty}}|{date_str}>"
-    return slack_date_str
+# Format date from "YYYY-MM-DD" to "Month Day, Year"
+def format_date(date_str):
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    return date_obj.strftime("%B %-d, %Y")
 
+# Structure hearings to post in Slack 
 def post_slack(rows):
     """
     Given rows of (date_str, committee, title, url, status),
@@ -114,15 +114,16 @@ def post_slack(rows):
     for date_str in sorted(by_date):
         blocks: list[dict] = []
 
-        date_formatted = date_formatting(date_str)  # e.g. returns f"<!date^{unix_timestamp}^{{date}}|{date_str}>"
+        # date_formatted = format_date(date_str)  # e.g. returns f"<!date^{unix_timestamp}^{{date}}|{date_str}>"
         # 1) Date header (rich_text_section inside a rich_text block)
         # date_formatted = date_formatting(date_str) # e.g. returns f"<!date^{unix_timestamp}^{{date}}|{date_str}>"
 
+        date_formatted = format_date(date_str)  # e.g. returns "June 1, 2024"
         blocks.append({
             "type": "rich_text",
             "elements": [{
                     "type": "rich_text_section",
-                    "elements": [{ "type": "text", "text": date_str, "style": {"bold": True} }]
+                    "elements": [{ "type": "text", "text": date_formatted, "style": {"bold": True} }]
                 }
             ]
         })
@@ -134,7 +135,8 @@ def post_slack(rows):
             section_elems = [
                 {
                     "type": "text",
-                    "text": f"{committee} | "
+                    "text": f"{committee} | ",
+                    "style": {"bold": True}
                 }
             ]
 
@@ -172,48 +174,7 @@ def post_slack(rows):
 
     return daily_blocks
 
-
-    # by_date = {}
-    # for date_str, committee, title, url in rows:
-    #     by_date[date_str] = by_date.get(date_str, [])
-    #     by_date[date_str].append((committee, title, url))
-
-    # print(by_date)
-    # blocks: list[dict] = []
-    # daily_blocks: dict[str, list[dict]] = {}
-
-    # for date_str in sorted(by_date):
-
-    #     # 1) Date header (rich_text_section inside a rich_text block)
-
-    #     blocks.append({
-    #         "type": "section",
-    #         "text": {
-    #                 "type": "mrkdwn",
-    #                 "text": date_formatting(date_str),
-    #                 # "style": {"bold": True}
-    #             }
-    #         })
-
-    #     # 2) Bulleted list for that date
-    #     bullets = [] 
-    #     for committee, title, url in by_date[date_str]:
-    #         label = f"*{committee}* | "
-    #         if url:
-    #             bullets.append(f" • {label}<{url}|{title}>")
-    #         else:
-    #             bullets.append(f" • {label}{title}")
-
-    #     blocks.append({
-    #         "type": "section",
-    #         "text": 
-    #             {
-    #                 "type": "mrkdwn",
-    #                 "text": "\n".join(bullets)
-    #             }
-    #     })
-
-    #     daily_blocks[date_str] = blocks
-
-    # return daily_blocks
         
+if __name__ == "__main__":
+    input = "06-01-2024"
+    print(format_date(input))

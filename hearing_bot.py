@@ -15,12 +15,7 @@ from excluded import irrelevant_hearings
 # ─── Setup SQLite ─────────────────────────────────────
 
 conn = sqlite3.connect("hearings.db")
-c    = conn.cursor()
-# c.execute("""
-#     ALTER TABLE hearings
-#     ADD status  TEXT;
-#     """)
-
+c    = conn.cursor() 
 c.execute("""
 CREATE TABLE IF NOT EXISTS hearings (
     id        TEXT PRIMARY KEY,
@@ -35,8 +30,7 @@ CREATE TABLE IF NOT EXISTS hearings (
 """)
 conn.commit()
 
-# ─── Setup Slack Bot ─────────────────────────────────────
-
+# Set up Slack app
 env_path = Path('.') / '.env'
 load_dotenv(dotenv_path=env_path)
 app = Flask(__name__)
@@ -47,10 +41,14 @@ client = WebClient(token=os.environ['SLACK_TOKEN'])
 # ─── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-
-    DB_PATH = os.getenv("DATABASE_PATH", "/data/hearings.db")
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)  # makes /data if missing
-
+    # For server, check if the database path is set and the directory exists
+    DB_PATH = os.getenv("DATABASE_PATH", "/app/data/hearings.db")
+    if not Path("/app/data").is_dir():
+        raise RuntimeError(
+            "/app/data volume is not mounted – aborting."
+        )
+    
+    # Create database if it doesn't exist
     conn = sqlite3.connect(DB_PATH, check_same_thread=False) 
     with conn:
         conn.execute("""
@@ -65,27 +63,26 @@ def main():
                 status    TEXT
             )
             """) 
-    
+    # "hearing_bot.py check_status" command checks for schedule changes
     if len(sys.argv) > 1 and sys.argv[1] == "check_status":
         check_status()
 
+    # "hearing_bot.py update" command will run the update function
     elif len(sys.argv) > 1 and sys.argv[1] == "update":    
         print("Ran update function")
-        daily_messages = update() 
+        daily_messages = update(DB_PATH) 
 
         if not daily_messages:
-            client.chat_postMessage(
-                channel = "#private-test-channel",
-                text = "No new upcoming hearings"
-            )            
+            print("No new hearings found.")           
             return
         for date_str, blocks in daily_messages.items():
             client.chat_postMessage(
-                channel = "#private-test-channel",
+                channel = "#hearings",
                 text = f"New upcoming hearings on {date_str}",
                 blocks=blocks
             )
 
+    # "hearing_bot.py upcoming" command will post all upcoming hearings
     elif len(sys.argv) > 1 and sys.argv[1] == "upcoming":
         upcoming = post_upcoming()
 
@@ -96,6 +93,7 @@ def main():
                 blocks=upcoming
             )
 
+    # "hearing_bot.py last_update" command will post the last posted hearings
     elif len(sys.argv) > 1 and sys.argv[1] == "last_update":
         last_update = post_last_update()
 
